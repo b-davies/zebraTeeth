@@ -1,0 +1,1327 @@
+---
+title: "Simulation of zebra tooth growth, wear, and isotope accumulation"
+author: "Ben Davies"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+TO FIX:
+-360 days in year for simulation, 365 days for d18O records (still an issue? Nov 2024)
+
+
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+## Step 0 Libraries and Functions
+```{r}
+##CLEAR ALL, ADD LIBRARIES
+rm(list = ls())
+library(scales)
+
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+##Function to get a birth day within a 365 day calendar
+#julainFirsts = Days that start each month in a 365 day calendar
+julianFirsts<-c(1,32,60,91,121,152,182,213,244,274,305,335) 
+getBirthday<-function(month){
+  if (month < 12){
+    birthday<-sample(julianFirsts[month]:julianFirsts[month+1],1,replace=FALSE)
+  } else {
+    birthday<-sample(julianFirsts[month]:365,1,replace=FALSE)
+  }
+  birthday
+}
+
+##Function to get birth months of zebras (following Penzhorn 1985)
+birthMonths<-rep(7,9)
+birthMonths<-append(birthMonths,rep(8,8))
+birthMonths<-append(birthMonths,rep(9,25))
+birthMonths<-append(birthMonths,rep(10,30))
+birthMonths<-append(birthMonths,rep(11,31))
+birthMonths<-append(birthMonths,rep(12,47))
+birthMonths<-append(birthMonths,rep(1,41))
+birthMonths<-append(birthMonths,rep(2,35))
+birthMonths<-append(birthMonths,rep(3,23))
+birthMonths<-append(birthMonths,rep(4,26))
+birthMonths<-append(birthMonths,rep(5,10))
+birthMonths<-append(birthMonths,rep(6,12))
+birthMonthFun<-function(n){
+  sample(birthMonths,n,replace=TRUE)
+}
+
+##Function to determine age (years) of specimen at death
+zebraAge<-seq(0,24,by=1)
+zebraMort<-c(0.3,0.25,0.18,0.14,0.1,0.07,0.06,0.1,0.14,0.16,0.15,0.15,0.14,0.13,0.13,0.11,0.08,0.05,0.03,0.02,0.01,0.01,0.01,0,0)
+mortFun<-approxfun(zebraAge,zebraMort)
+
+
+
+##Function to get loss of crown height for a given age
+#ch0 = theoretical max crown height
+#t = time in months (ageMonths)
+#te = months to eruption (eruption_month)
+#PEL = Potential ecological longevity (max_months)
+
+crownWear<-function(ch0,t,te,PEL){
+  if (t >= te) {
+ ((ch0*10)-(((ch0*10)*(1-((t-te)/PEL)^0.5))))*100
+  }
+  else {
+    0
+  }
+}
+
+```
+
+### MODEL SETUP
+##Setup Step 1: Model parameters and input data
+```{r}
+##MODEL PARAMETERS
+
+#Number of zebras to simulate
+n<-1000
+#Max zebra age (in years)
+maxYears<-24
+#Month when mineralization starts (start isotope accumulation)
+mineralizationStartMonth<-21
+#Month when tooth erupts (stop isotope accumulation)
+mineralizationStopMonth<-55
+#Month when tooth begins to wear (eruption)
+wearStartMonth<-45
+#Mean crown height (mm)
+maxCrownHeight<-87.5
+#start month for d18O record
+startMonth<-1
+#years of d18O record
+years<-100
+#number of zebra teeth to sample
+sampleSize<-100
+#INPUT DATA
+
+
+#d18O data
+d18O<-read.csv("data/sim_d180.csv",stringsAsFactors = FALSE)
+
+DAY<-c(1:500)
+D181<-d18O$AMP1
+D181<-append(D181,d18O$AMP1)
+D181<-D181[1:500]
+
+D182<-d18O$AMP2
+D182<-append(D182,d18O$AMP2)
+D182<-D182[1:500]
+
+D183<-d18O$AMP3
+D183<-append(D183,d18O$AMP3)
+D183<-D183[1:500]
+
+D184<-d18O$AMP4
+D184<-append(D184,d18O$AMP4)
+D184<-D184[1:500]
+
+data<-data.frame(DAY,AMP1=D181,AMP2=D182,AMP3=D183,AMP4=D184)
+write.csv(data,"sim_d18O.csv",row.names = FALSE)
+
+```
+
+
+
+##Setup Step 2: Model tooth growth rates
+```{r}
+#Total possible period of tooth growth (days)
+totalGrowthDays<-(mineralizationStopMonth-mineralizationStartMonth) * 30
+#Total possible crown height (microns)
+totalGrowthHeight<-maxCrownHeight * 1000
+
+#Get cumulative growth in microns/day using Beta distribution for constant (shape = 1,1) and non-linear ( shape = 1,3)
+x <- seq(0, 1, length.out = totalGrowthDays)
+constantLBD<-pbeta(x, 1, 1) * totalGrowthHeight
+highLBD<-pbeta(x, 1, 3) * totalGrowthHeight
+day<-c(1:length(constantLBD))
+growthRates<-data.frame(day,constant=constantLBD,nonLinear=highLBD)
+write.csv(growthRates,"growthRates.csv")
+
+#Plot cumulative crown height by day
+plot(constantLBD,col="black",xlab="Days after start of mineralization",ylab="Crown height (microns)",type="l",lwd=2,ylim=c(0,87500))
+lines(highLBD,lwd=2,col="red")
+legend(600, 40000, legend=c("constant","non-linear"), col=c("black","red"), lwd=2,bty="n")
+#abline(h=69000,lty=2)
+#abline(v=450,lty=2)
+
+#Functions to calculate time from crownheight
+toothFunConstant<-approxfun(constantLBD,c(1:totalGrowthDays),rule=2)
+toothFunHigh<-approxfun(highLBD,c(1:totalGrowthDays),rule=2)
+
+totalCrownWear<-c()
+for (i in c(wearStartMonth:(maxYears*12))){
+h<-crownWear(maxCrownHeight, i, wearStartMonth, (maxYears * 12))
+totalCrownWear<-append(totalCrownWear,h)
+}
+plot(c(wearStartMonth:(maxYears*12))/12,totalCrownWear,xlab="Age in Years",ylab="Cumulative Crown Wear (microns)",type="l",lwd=2,xlim=c(0,25))
+```
+
+
+
+##Setup Step 3 Simulate zebra ages at death
+```{r}
+deadZebraAges<-c()
+while (length(deadZebraAges)<n){
+  #pick a random age between 0 and 24
+  age<-runif(1,0,24)
+  #if mortality 
+  if (runif(1)<=mortFun(age)){
+    deadZebraAges<-append(deadZebraAges,age)
+  }
+}
+#Plot ages at death as a histogram
+hist(deadZebraAges,xlab="Age at Death",main="")
+#Plot birth month as a histogram
+zebraBirthdays <- birthMonthFun(n)
+hist(zebraBirthdays, xlab = "Birth Month", main="")
+data<-data.frame(born=zebraBirthdays,died=deadZebraAges)
+write.csv(data,"birthDeath.csv")
+
+```
+
+
+###EXPERIMENT 1 & 2: Null case and non-linear growth rate
+#EX1&2 Step 1: Simulate tooth growth
+```{r}
+#starting specimen number
+specNum <- 1
+#create empty vectors for relevant variables
+specimen <- c()
+age_at_death <- c()
+birth_year<- c()
+birth_month <- c()
+birth_day <- c()
+crown_mu <- c()
+model <- c()
+mm_band <- c()
+startMM <- c()
+endMM <- c()
+startTime <- c()
+endTime <- c()
+duration<- c()
+
+
+for (ii in c(1:200)){
+  
+  ageYears <- 4.5833333 
+  ageMonths <- ageYears * 12
+  birthYear<-1  
+  birthMonth<-1 
+  birthDay<-1 
+  
+  #If the age of the zebra is older than the age when the tooth starts to mineralize
+  if (ageMonths >= mineralizationStartMonth) {
+    #If age is younger than age when tooth stops mineralizing
+    if (ageMonths <= mineralizationStopMonth) {
+      #Get start and finish for constant and high models
+       cusp <- 0
+      dejDay <- (ageMonths - mineralizationStartMonth) * 30
+      dejConstant <- constantLBD[dejDay]
+      dejHigh <- highLBD[dejDay]
+      #If the tooth is older than the age when tooth begins mineralizing
+    } else {
+      #Get cusp and DEJ (start and finish) for constant and logistic (high) models with wear
+      cusp <- 0
+      dejDay <- ((mineralizationStopMonth - mineralizationStartMonth) * 30)
+      dejConstant <- totalGrowthHeight
+      dejHigh <- totalGrowthHeight
+    }
+    #Get start and end from crown to cusp for constant model
+    st <- cusp
+    en <- dejConstant
+    #Run this code if there is at least 1 mm of tooth
+    if (en >= 1000){
+      #Get the total space in microns
+      df <- en - st
+      #Divide into 1000 micron segments
+      sampleSpace <- df - (df %% 1000)
+      samples <- c(1:(sampleSpace / 1000))
+      #get start and end for each sample
+      sampleStart <- seq(st, (st + (sampleSpace - 1000)), by=1000)
+      sampleEnd <- seq(st + 1000, (st + (sampleSpace)), by=1000)
+      #for each sample, record the following variables
+      for (i in samples) {
+        specimen <- append(specimen,specNum)
+        age_at_death <- append(age_at_death,ageYears)
+        birth_year <- append(birth_year,birthYear)
+        birth_month <- append(birth_month,birthMonth)
+        birth_day <- append(birth_day,birthDay)
+        crown_mu <- append(crown_mu,cusp)
+        model <- append(model,"Constant")
+        mm_band <- append(mm_band,i)
+        startMM<- append(startMM,sampleStart[i])
+        endMM <- append(endMM,sampleEnd[i])
+        #pull the start, end, and duration from the constant model
+        startTime<- append(startTime,toothFunConstant(sampleStart[i]))
+        endTime <- append(endTime,toothFunConstant(sampleEnd[i]))
+        duration <- append(duration,toothFunConstant(sampleEnd[i])-toothFunConstant(sampleStart[i]))
+      }
+    } else {
+      #run this code if there are less than 1000 microns in the tooth to record NA
+      specimen <- append(specimen,specNum)
+      age_at_death <- append(age_at_death,ageYears)
+      birth_year <- append(birth_year,birthYear)
+      birth_month <- append(birth_month,birthMonth)
+      birth_day <- append(birth_day,birthDay)
+      crown_mu <- append(crown_mu,cusp)
+      model <- append(model,"Constant")
+      mm_band <- append(mm_band,NA)
+      startMM<- append(startMM,NA)
+      endMM <- append(endMM,NA)
+      startTime<- append(startTime,NA)
+      endTime <- append(endTime,NA)
+      duration <- append(duration,NA)
+    }
+    
+    #get start and end from crown to cusp for logistic (high) model
+    st <- cusp
+    en <- dejHigh
+    #run this code if there is at least 1 mm of tooth
+    if (en>=1000){
+      #Get the total space in microns
+      df <- en - st
+       #Divide into 1000 micron segments
+      sampleSpace <- df - (df %% 1000)
+      samples <- c(1:(sampleSpace / 1000))
+      #get start and end for each sample
+      sampleStart <- seq(st, (st + (sampleSpace - 1000)), by=1000)
+      sampleEnd <- seq(st + 1000, (st + (sampleSpace)), by=1000)
+      #for each sample, record the following variables
+      for (k in samples) {
+        specimen <- append(specimen,specNum)
+        age_at_death <- append(age_at_death,ageYears)
+        birth_year <- append(birth_year,birthYear)
+        birth_month <- append(birth_month,birthMonth)
+        birth_day <- append(birth_day,birthDay)
+        crown_mu <- append(crown_mu,cusp)
+        model <- append(model,"High")
+        mm_band <- append(mm_band,k)
+        startMM<- append(startMM,sampleStart[k])
+        endMM <- append(endMM,sampleEnd[k])
+        #pull the start, end, and duration from the logistic (high) model
+        startTime<- append(startTime,toothFunHigh(sampleStart[k]))
+        endTime <- append(endTime,toothFunHigh(sampleEnd[k]))
+        duration <- append(duration,toothFunHigh(sampleEnd[k])-toothFunHigh(sampleStart[k]))
+      }
+    } else {
+      #run this code if there are less than 1000 microns in the tooth to record NA
+      specimen <- append(specimen,specNum)
+      age_at_death <- append(age_at_death,ageYears)
+      birth_year <- append(birth_year,birthYear)
+      birth_month <- append(birth_month,birthMonth)
+      birth_day <- append(birth_day,birthDay)
+      crown_mu <- append(crown_mu,cusp)
+      model <- append(model,"High")
+      mm_band <- append(mm_band,NA)
+      startMM<- append(startMM,NA)
+      endMM <- append(endMM,NA)
+      startTime<- append(startTime,NA)
+      endTime <- append(endTime,NA)
+      duration <- append(duration,NA)
+    }
+    #advance the specimen number
+    specNum<-specNum + 1
+  }
+}
+#assemble the variable vectors into a dataframe
+zebraToothData<-data.frame(specimen,age_at_death,birth_year,birth_month,birth_day,crown_mu,model,mm_band,startMM,endMM,startTime,endTime,duration)
+
+
+```
+
+
+#EX1&2 Step 2: Simulate d18O sequence and intra-tooth time averaging
+```{r}
+
+#Assemble eight-year records of d18O values at amplitudes 1, 2, 3, and 4
+record1<-d18O[,3]
+record1<-append(record1,record1)
+record1<-append(record1,record1)
+record1<-append(record1,record1)
+
+record2<-d18O[,4]
+record2<-append(record2,record2)
+record2<-append(record2,record2)
+record2<-append(record2,record2)
+
+record3<-d18O[,5]
+record3<-append(record3,record3)
+record3<-append(record3,record3)
+record3<-append(record3,record3)
+
+record4<-d18O[,6]
+record4<-append(record4,record4)
+record4<-append(record4,record4)
+record4<-append(record4,record4)
+
+
+#Create functions to get d18O values from a sequence of dates
+oxyFun1<-approxfun(seq(1,length(record1),by=1),record1)
+oxyFun2<-approxfun(seq(1,length(record2),by=1),record2)
+oxyFun3<-approxfun(seq(1,length(record3),by=1),record3)
+oxyFun4<-approxfun(seq(1,length(record4),by=1),record4)
+
+#empty vectors to record d18O values at different amplitudes
+d18O_1<-c()
+d18O_2<-c()
+d18O_3<-c()
+d18O_4<-c()
+
+#for each sample in the zebraTeeth dataset
+for(i in c(1:length(zebraToothData[,1]))){
+  #if the sample has 1000 mm to work with
+  if (is.na(zebraToothData[i,8])==FALSE){
+    #pull start and end times 
+    s<-zebraToothData[i,11]#(zebraToothData[i,3]*365)+zebraToothData[i,5]
+    e<-zebraToothData[i,12]#s+(zebraToothData[i,12]-1)
+    #make these relative to birth date of zebra
+    s<-s+((zebraToothData[i,5]))
+    e<-e+((zebraToothData[i,5]))
+    #get an evenly spaced number of intervals from within that timeframe
+    avSeq<-seq(s,e,by=0.1)
+    
+    #append average over interval values to get d18O value for time period
+    d18O_1<-append(d18O_1,mean(oxyFun1(avSeq)))
+    d18O_2<-append(d18O_2,mean(oxyFun2(avSeq)))
+    d18O_3<-append(d18O_3,mean(oxyFun3(avSeq)))
+    d18O_4<-append(d18O_4,mean(oxyFun4(avSeq)))
+  } else {
+    #if the sample is not 1 mm, use NA values
+    d18O_1<-append(d18O_1,NA)
+    d18O_2<-append(d18O_2,NA)
+    d18O_3<-append(d18O_3,NA)
+    d18O_4<-append(d18O_4,NA)
+  }
+}
+#av_d18O<-av_d18O-2
+
+#add records for different amplitudes on to data
+zebraData<-cbind(zebraToothData,d18O_1)
+zebraData<-cbind(zebraData,d18O_2)
+zebraData<-cbind(zebraData,d18O_3)
+zebraData<-cbind(zebraData,d18O_4)
+write.csv(zebraData,"simZebraDataEX12.csv")
+```
+
+#EX1&2 Step 3: Plotting
+```{r}
+zebraData<-read.csv("simZebraDataEX12.csv",stringsAsFactors = FALSE)
+zebraData<-zebraData[,-1]
+#Plot 1: Null case
+zebraSamp<-subset(zebraData,model=="Constant")
+samp<-sample(unique(zebraSamp$specimen),20)
+plot(seq(0,90,by=10),seq(-9,0,by=1),col="white",xlab="mm from occlusal surface",ylab=expression(paste(delta^"18","O")),ylim=c(-7,-1),xlim=c(0,88))
+for (i in samp){
+  s<-subset(zebraSamp,specimen==i)
+  lines(s[,8],s[,15],col=alpha("black",0.5),lwd=2)
+ 
+}
+
+#Plot 2: Constant vs Non-Linear Growth
+plot(seq(0,90,by=10),seq(-9,0,by=1),col="white",xlab="mm from occlusal surface",ylab=expression(paste(delta^"18","O")),ylim=c(-7,-1),xlim=c(0,88))
+for (i in samp){
+  s<-subset(zebraSamp,specimen==i)
+  lines(s[,8],s[,16],col=alpha("black",0.5),lwd=2)
+}
+zebraSamp2<-subset(zebraData,model=="High")
+samp2<-sample(unique(zebraSamp2$specimen),20)
+for (i in samp2){
+  s<-subset(zebraSamp2,specimen==i)
+  lines(s[,8],s[,16],col=alpha("red",0.5),lwd=2)
+ 
+}
+zebraData1<-subset(zebraData,specimen==1)
+zebA<-subset(zebraData1,model=="Constant")
+zebB<-subset(zebraData1,model=="High")
+```
+
+
+###EXPERIMENT 3: Varying birth dates
+#EX3 Step 1: Simulate tooth growth
+```{r}
+#starting specimen number
+specNum <- 1
+#create empty vectors for relevant variables
+specimen <- c()
+age_at_death <- c()
+birth_year<- c()
+birth_month <- c()
+birth_day <- c()
+crown_mu <- c()
+model <- c()
+mm_band <- c()
+startMM <- c()
+endMM <- c()
+startTime <- c()
+endTime <- c()
+duration<- c()
+
+
+for (ii in c(1:500)){
+  ageYears <- sample(deadZebraAges, 1)
+  ageYears <- 3 #uncomment to make all zebras the same age
+  ageMonths <- ageYears * 12
+  birthYear <- sample(1:(years-(mineralizationStopMonth/12)),1)
+#  birthYear<-1  #uncomment to make all zebras born in the same year
+  birthMonth <- birthMonthFun(1)
+#  birthMonth<-1 #uncomment to make all zebras born in the same month
+  birthDay <- getBirthday(birthMonth)
+ # birthDay<-1  #uncomment to make all zebras born on the same day
+  
+  
+
+  #If the age of the zebra is older than the age when the tooth starts to mineralize
+  if (ageMonths > mineralizationStartMonth) {
+    #If age is younger than age when tooth stops mineralizing
+    if (ageMonths < mineralizationStopMonth) {
+      #Get start and finish for constant and high models
+       cusp <- crownWear(maxCrownHeight, ageMonths, wearStartMonth, (maxYears * 12))
+      dejDay <- (ageMonths - mineralizationStartMonth) * 30
+      dejConstant <- constantLBD[dejDay]
+      dejHigh <- highLBD[dejDay]
+      #If the tooth is older than the age when tooth begins mineralizing
+    } else {
+      #Get cusp and DEJ (start and finish) for constant and logistic (high) models with wear
+      cusp <- crownWear(maxCrownHeight, ageMonths, wearStartMonth, (maxYears * 12))
+      dejDay <- ((mineralizationStopMonth - mineralizationStartMonth) * 30)
+      dejConstant <- totalGrowthHeight
+      dejHigh <- totalGrowthHeight
+    }
+    #Get start and end from crown to cusp for constant model
+    st <- cusp
+    en <- dejConstant
+    #Run this code if there is at least 1 mm of tooth
+    if (en >= 1000){
+      #Get the total space in microns
+      df <- en - st
+      #Divide into 1000 micron segments
+      sampleSpace <- df - (df %% 1000)
+      samples <- c(1:(sampleSpace / 1000))
+      #get start and end for each sample
+      sampleStart <- seq(st, (st + (sampleSpace - 1000)), by=1000)
+      sampleEnd <- seq(st + 1000, (st + (sampleSpace)), by=1000)
+      #for each sample, record the following variables
+      for (i in samples) {
+        specimen <- append(specimen,specNum)
+        age_at_death <- append(age_at_death,ageYears)
+        birth_year <- append(birth_year,birthYear)
+        birth_month <- append(birth_month,birthMonth)
+        birth_day <- append(birth_day,birthDay)
+        crown_mu <- append(crown_mu,cusp)
+        model <- append(model,"Constant")
+        mm_band <- append(mm_band,i)
+        startMM<- append(startMM,sampleStart[i])
+        endMM <- append(endMM,sampleEnd[i])
+        #pull the start, end, and duration from the constant model
+        startTime<- append(startTime,toothFunConstant(sampleStart[i]))
+        endTime <- append(endTime,toothFunConstant(sampleEnd[i]))
+        duration <- append(duration,toothFunConstant(sampleEnd[i])-toothFunConstant(sampleStart[i]))
+      }
+    } else {
+      #run this code if there are less than 1000 microns in the tooth to record NA
+      specimen <- append(specimen,specNum)
+      age_at_death <- append(age_at_death,ageYears)
+      birth_year <- append(birth_year,birthYear)
+      birth_month <- append(birth_month,birthMonth)
+      birth_day <- append(birth_day,birthDay)
+      crown_mu <- append(crown_mu,cusp)
+      model <- append(model,"Constant")
+      mm_band <- append(mm_band,NA)
+      startMM<- append(startMM,NA)
+      endMM <- append(endMM,NA)
+      startTime<- append(startTime,NA)
+      endTime <- append(endTime,NA)
+      duration <- append(duration,NA)
+    }
+    
+    #get start and end from crown to cusp for logistic (high) model
+    st <- cusp
+    en <- dejHigh
+    #run this code if there is at least 1 mm of tooth
+    if (en>=1000){
+      #Get the total space in microns
+      df <- en - st
+       #Divide into 1000 micron segments
+      sampleSpace <- df - (df %% 1000)
+      samples <- c(1:(sampleSpace / 1000))
+      #get start and end for each sample
+      sampleStart <- seq(st, (st + (sampleSpace - 1000)), by=1000)
+      sampleEnd <- seq(st + 1000, (st + (sampleSpace)), by=1000)
+      #for each sample, record the following variables
+      for (k in samples) {
+        specimen <- append(specimen,specNum)
+        age_at_death <- append(age_at_death,ageYears)
+        birth_year <- append(birth_year,birthYear)
+        birth_month <- append(birth_month,birthMonth)
+        birth_day <- append(birth_day,birthDay)
+        crown_mu <- append(crown_mu,cusp)
+        model <- append(model,"High")
+        mm_band <- append(mm_band,k)
+        startMM<- append(startMM,sampleStart[k])
+        endMM <- append(endMM,sampleEnd[k])
+        #pull the start, end, and duration from the logistic (high) model
+        startTime<- append(startTime,toothFunHigh(sampleStart[k]))
+        endTime <- append(endTime,toothFunHigh(sampleEnd[k]))
+        duration <- append(duration,toothFunHigh(sampleEnd[k])-toothFunHigh(sampleStart[k]))
+      }
+    } else {
+      #run this code if there are less than 1000 microns in the tooth to record NA
+      specimen <- append(specimen,specNum)
+      age_at_death <- append(age_at_death,ageYears)
+      birth_year <- append(birth_year,birthYear)
+      birth_month <- append(birth_month,birthMonth)
+      birth_day <- append(birth_day,birthDay)
+      crown_mu <- append(crown_mu,cusp)
+      model <- append(model,"High")
+      mm_band <- append(mm_band,NA)
+      startMM<- append(startMM,NA)
+      endMM <- append(endMM,NA)
+      startTime<- append(startTime,NA)
+      endTime <- append(endTime,NA)
+      duration <- append(duration,NA)
+    }
+    #advance the specimen number
+    specNum<-specNum + 1
+  }
+}
+#assemble the variable vectors into a dataframe
+zebraToothData<-data.frame(specimen,age_at_death,birth_year,birth_month,birth_day,crown_mu,model,mm_band,startMM,endMM,startTime,endTime,duration)
+
+```
+
+
+#EX3 Step 2: Simulate d18O sequence and intra-tooth time averaging
+```{r}
+
+#Assemblge four-year records of d18O values at amplitudes 1, 2, 3, and 4
+record1<-d18O[,3]
+record1<-append(record1,record1)
+record1<-append(record1,record1)
+record1<-append(record1,record1)
+
+record2<-d18O[,4]
+record2<-append(record2,record2)
+record2<-append(record2,record2)
+record2<-append(record2,record2)
+
+record3<-d18O[,5]
+record3<-append(record3,record3)
+record3<-append(record3,record3)
+record3<-append(record3,record3)
+
+record4<-d18O[,6]
+record4<-append(record4,record4)
+record4<-append(record4,record4)
+record4<-append(record4,record4)
+
+
+#Create functions to get d18O values from a sequence of dates
+oxyFun1<-approxfun(seq(1,length(record1),by=1),record1)
+oxyFun2<-approxfun(seq(1,length(record2),by=1),record2)
+oxyFun3<-approxfun(seq(1,length(record3),by=1),record3)
+oxyFun4<-approxfun(seq(1,length(record4),by=1),record4)
+
+#empty vectors to record d18O values at different amplitudes
+d18O_1<-c()
+d18O_2<-c()
+d18O_3<-c()
+d18O_4<-c()
+
+#for each sample in the zebraTeeth dataset
+for(i in c(1:length(zebraToothData[,1]))){
+  #if the sample has 1000 mm to work with
+  if (is.na(zebraToothData[i,8])==FALSE){
+    #pull start and end times 
+    s<-zebraToothData[i,11]#(zebraToothData[i,3]*365)+zebraToothData[i,5]
+    e<-zebraToothData[i,12]#s+(zebraToothData[i,12]-1)
+    #make these relative to birth date of zebra
+    s<-s+((zebraToothData[i,5]))
+    e<-e+((zebraToothData[i,5]))
+    #get an evenly spaced number of intervals from within that timeframe
+    avSeq<-seq(s,e,by=0.1)
+    
+    #append average over interval values to get d18O value for time period
+    d18O_1<-append(d18O_1,mean(oxyFun1(avSeq)))
+    d18O_2<-append(d18O_2,mean(oxyFun2(avSeq)))
+    d18O_3<-append(d18O_3,mean(oxyFun3(avSeq)))
+    d18O_4<-append(d18O_4,mean(oxyFun4(avSeq)))
+  } else {
+    #if the sample is not 1 mm, use NA values
+    d18O_1<-append(d18O_1,NA)
+    d18O_2<-append(d18O_2,NA)
+    d18O_3<-append(d18O_3,NA)
+    d18O_4<-append(d18O_4,NA)
+  }
+}
+#av_d18O<-av_d18O-2
+
+#add records for different amplitudes on to data
+zebraData<-cbind(zebraToothData,d18O_1)
+zebraData<-cbind(zebraData,d18O_2)
+zebraData<-cbind(zebraData,d18O_3)
+zebraData<-cbind(zebraData,d18O_4)
+write.csv(zebraData,"simZebraDataEX3.csv",row.names = FALSE)
+```
+
+#EX3 Step 3: Plotting
+```{r}
+zebraData<-read.csv("simZebraDataEX3.csv",stringsAsFactors = FALSE)
+ex3SD<-c()
+ex3MaxMin<-c()
+#Plot 3: Varible birth dates
+zebraSamp<-subset(zebraData,model=="High")
+samp<-sample(unique(zebraSamp$specimen),100)
+plot(seq(0,90,by=10),seq(-9,0,by=1),col="white",xlab="mm from occlusal surface",ylab=expression(paste(delta^"18","O")),ylim=c(-7,-1))
+for (i in samp){
+  s<-subset(zebraSamp,specimen==i)
+  lines(s[,8],s[,15],col=alpha("black",0.5))
+  stDev<-sd(s[,15])
+  MaxMin<-max(s[,15])-min(s[,15])
+  ex3SD<-append(ex3SD,stDev)
+  ex3MaxMin<-append(ex3MaxMin,MaxMin)
+}
+
+sdAmp<-sd(d18O$AMP2)
+sdAmpDown<-0
+sdAmpUp<-sdAmp*2
+sdBreaks<-seq(sdAmpDown,sdAmpUp,length.out=40)
+MaxMinAmp<-max(d18O$AMP2)-min(d18O$AMP2)
+MaxMinAmpDown<-0
+MaxMinAmpUp<-MaxMinAmp*2
+MaxMinBreaks<-seq(MaxMinAmpDown,MaxMinAmpUp,length.out=40)
+
+hist(ex3SD,xlim=c(sdAmpDown,sdAmpUp),xlab=expression(paste(delta,"18O Standard Deviation")),breaks=sdBreaks,main="")
+abline(v=sdAmp,lty=2)
+hist(ex3MaxMin,xlim=c(MaxMinAmpDown,MaxMinAmpUp),xlab=expression(paste(delta,"18O Max-Min")),breaks=MaxMinBreaks,main="")
+abline(v=MaxMinAmp,lty=2)
+
+```
+
+###EXPERIMENT 4: Varying birth dates and mortality
+#EX4 Step 1: Simulate tooth growth
+```{r}
+#starting specimen number
+specNum <- 1
+#create empty vectors for relevant variables
+specimen <- c()
+age_at_death <- c()
+birth_year<- c()
+birth_month <- c()
+birth_day <- c()
+crown_mu <- c()
+model <- c()
+mm_band <- c()
+startMM <- c()
+endMM <- c()
+startTime <- c()
+endTime <- c()
+duration<- c()
+
+
+for (ii in c(1:500)){
+  ageYears <- sample(deadZebraAges, 1)
+ # ageYears <- 3 #uncomment to make all zebras the same age
+  ageMonths <- ageYears * 12
+  birthYear <- sample(1:(years-(mineralizationStopMonth/12)),1)
+#  birthYear<-1  #uncomment to make all zebras born in the same year
+  birthMonth <- birthMonthFun(1)
+#  birthMonth<-1 #uncomment to make all zebras born in the same month
+  birthDay <- getBirthday(birthMonth)
+ # birthDay<-1  #uncomment to make all zebras born on the same day
+  
+  
+
+  #If the age of the zebra is older than the age when the tooth starts to mineralize
+  if (ageMonths > mineralizationStartMonth) {
+    #If age is younger than age when tooth stops mineralizing
+    if (ageMonths < mineralizationStopMonth) {
+      #Get start and finish for constant and high models
+       cusp <- crownWear(maxCrownHeight, ageMonths, wearStartMonth, (maxYears * 12))
+      dejDay <- (ageMonths - mineralizationStartMonth) * 30
+      dejConstant <- constantLBD[dejDay]
+      dejHigh <- highLBD[dejDay]
+      #If the tooth is older than the age when tooth begins mineralizing
+    } else {
+      #Get cusp and DEJ (start and finish) for constant and logistic (high) models with wear
+      cusp <- crownWear(maxCrownHeight, ageMonths, wearStartMonth, (maxYears * 12))
+      dejDay <- ((mineralizationStopMonth - mineralizationStartMonth) * 30)
+      dejConstant <- totalGrowthHeight
+      dejHigh <- totalGrowthHeight
+    }
+    #Get start and end from crown to cusp for constant model
+    st <- cusp
+    en <- dejConstant
+    #Run this code if there is at least 1 mm of tooth
+    if (en >= 1000){
+      #Get the total space in microns
+      df <- en - st
+      #Divide into 1000 micron segments
+      sampleSpace <- df - (df %% 1000)
+      samples <- c(1:(sampleSpace / 1000))
+      #get start and end for each sample
+      sampleStart <- seq(st, (st + (sampleSpace - 1000)), by=1000)
+      sampleEnd <- seq(st + 1000, (st + (sampleSpace)), by=1000)
+      #for each sample, record the following variables
+      for (i in samples) {
+        specimen <- append(specimen,specNum)
+        age_at_death <- append(age_at_death,ageYears)
+        birth_year <- append(birth_year,birthYear)
+        birth_month <- append(birth_month,birthMonth)
+        birth_day <- append(birth_day,birthDay)
+        crown_mu <- append(crown_mu,cusp)
+        model <- append(model,"Constant")
+        mm_band <- append(mm_band,i)
+        startMM<- append(startMM,sampleStart[i])
+        endMM <- append(endMM,sampleEnd[i])
+        #pull the start, end, and duration from the constant model
+        startTime<- append(startTime,toothFunConstant(sampleStart[i]))
+        endTime <- append(endTime,toothFunConstant(sampleEnd[i]))
+        duration <- append(duration,toothFunConstant(sampleEnd[i])-toothFunConstant(sampleStart[i]))
+      }
+    } else {
+      #run this code if there are less than 1000 microns in the tooth to record NA
+      specimen <- append(specimen,specNum)
+      age_at_death <- append(age_at_death,ageYears)
+      birth_year <- append(birth_year,birthYear)
+      birth_month <- append(birth_month,birthMonth)
+      birth_day <- append(birth_day,birthDay)
+      crown_mu <- append(crown_mu,cusp)
+      model <- append(model,"Constant")
+      mm_band <- append(mm_band,NA)
+      startMM<- append(startMM,NA)
+      endMM <- append(endMM,NA)
+      startTime<- append(startTime,NA)
+      endTime <- append(endTime,NA)
+      duration <- append(duration,NA)
+    }
+    
+    #get start and end from crown to cusp for logistic (high) model
+    st <- cusp
+    en <- dejHigh
+    #run this code if there is at least 1 mm of tooth
+    if (en>=1000){
+      #Get the total space in microns
+      df <- en - st
+       #Divide into 1000 micron segments
+      sampleSpace <- df - (df %% 1000)
+      samples <- c(1:(sampleSpace / 1000))
+      #get start and end for each sample
+      sampleStart <- seq(st, (st + (sampleSpace - 1000)), by=1000)
+      sampleEnd <- seq(st + 1000, (st + (sampleSpace)), by=1000)
+      #for each sample, record the following variables
+      for (k in samples) {
+        specimen <- append(specimen,specNum)
+        age_at_death <- append(age_at_death,ageYears)
+        birth_year <- append(birth_year,birthYear)
+        birth_month <- append(birth_month,birthMonth)
+        birth_day <- append(birth_day,birthDay)
+        crown_mu <- append(crown_mu,cusp)
+        model <- append(model,"High")
+        mm_band <- append(mm_band,k)
+        startMM<- append(startMM,sampleStart[k])
+        endMM <- append(endMM,sampleEnd[k])
+        #pull the start, end, and duration from the logistic (high) model
+        startTime<- append(startTime,toothFunHigh(sampleStart[k]))
+        endTime <- append(endTime,toothFunHigh(sampleEnd[k]))
+        duration <- append(duration,toothFunHigh(sampleEnd[k])-toothFunHigh(sampleStart[k]))
+      }
+    } else {
+      #run this code if there are less than 1000 microns in the tooth to record NA
+      specimen <- append(specimen,specNum)
+      age_at_death <- append(age_at_death,ageYears)
+      birth_year <- append(birth_year,birthYear)
+      birth_month <- append(birth_month,birthMonth)
+      birth_day <- append(birth_day,birthDay)
+      crown_mu <- append(crown_mu,cusp)
+      model <- append(model,"High")
+      mm_band <- append(mm_band,NA)
+      startMM<- append(startMM,NA)
+      endMM <- append(endMM,NA)
+      startTime<- append(startTime,NA)
+      endTime <- append(endTime,NA)
+      duration <- append(duration,NA)
+    }
+    #advance the specimen number
+    specNum<-specNum + 1
+  }
+}
+#assemble the variable vectors into a dataframe
+zebraToothData<-data.frame(specimen,age_at_death,birth_year,birth_month,birth_day,crown_mu,model,mm_band,startMM,endMM,startTime,endTime,duration)
+
+```
+
+
+#EX4 Step 2: Simulate d18O sequence and intra-tooth time averaging
+```{r}
+
+#Assemblge four-year records of d18O values at amplitudes 1, 2, 3, and 4
+record1<-d18O[,3]
+record1<-append(record1,record1)
+record1<-append(record1,record1)
+record1<-append(record1,record1)
+
+record2<-d18O[,4]
+record2<-append(record2,record2)
+record2<-append(record2,record2)
+record2<-append(record2,record2)
+
+record3<-d18O[,5]
+record3<-append(record3,record3)
+record3<-append(record3,record3)
+record3<-append(record3,record3)
+
+record4<-d18O[,6]
+record4<-append(record4,record4)
+record4<-append(record4,record4)
+record4<-append(record4,record4)
+
+
+#Create functions to get d18O values from a sequence of dates
+oxyFun1<-approxfun(seq(1,length(record1),by=1),record1)
+oxyFun2<-approxfun(seq(1,length(record2),by=1),record2)
+oxyFun3<-approxfun(seq(1,length(record3),by=1),record3)
+oxyFun4<-approxfun(seq(1,length(record4),by=1),record4)
+
+#empty vectors to record d18O values at different amplitudes
+d18O_1<-c()
+d18O_2<-c()
+d18O_3<-c()
+d18O_4<-c()
+
+#for each sample in the zebraTeeth dataset
+for(i in c(1:length(zebraToothData[,1]))){
+  #if the sample has 1000 mm to work with
+  if (is.na(zebraToothData[i,8])==FALSE){
+    #pull start and end times 
+    s<-zebraToothData[i,11]#(zebraToothData[i,3]*365)+zebraToothData[i,5]
+    e<-zebraToothData[i,12]#s+(zebraToothData[i,12]-1)
+    #make these relative to birth date of zebra
+    s<-s+((zebraToothData[i,5]))
+    e<-e+((zebraToothData[i,5]))
+    #get an evenly spaced number of intervals from within that timeframe
+    avSeq<-seq(s,e,by=0.1)
+    
+    #append average over interval values to get d18O value for time period
+    d18O_1<-append(d18O_1,mean(oxyFun1(avSeq)))
+    d18O_2<-append(d18O_2,mean(oxyFun2(avSeq)))
+    d18O_3<-append(d18O_3,mean(oxyFun3(avSeq)))
+    d18O_4<-append(d18O_4,mean(oxyFun4(avSeq)))
+  } else {
+    #if the sample is not 1 mm, use NA values
+    d18O_1<-append(d18O_1,NA)
+    d18O_2<-append(d18O_2,NA)
+    d18O_3<-append(d18O_3,NA)
+    d18O_4<-append(d18O_4,NA)
+  }
+}
+#av_d18O<-av_d18O-2
+
+#add records for different amplitudes on to data
+zebraData<-cbind(zebraToothData,d18O_1)
+zebraData<-cbind(zebraData,d18O_2)
+zebraData<-cbind(zebraData,d18O_3)
+zebraData<-cbind(zebraData,d18O_4)
+write.csv(zebraData,"simZebraDataEX4.csv",row.names = FALSE)
+```
+
+#EX4 Step 3: Plotting
+```{r}
+zebraData<-read.csv("simZebraDataEX4.csv",stringsAsFactors = FALSE)
+ex4SD<-c()
+ex4MaxMin<-c()
+#Plot 3: Varible birth dates
+zebraSamp<-subset(zebraData,model=="High")
+samp<-sample(unique(zebraSamp$specimen),100)
+
+plot(seq(0,90,by=10),seq(-9,0,by=1),col="white",xlab="mm from occlusal surface",ylab=expression(paste(delta^"18","O")),ylim=c(-7,-1))
+for (i in samp){
+  s<-subset(zebraSamp,specimen==i)
+  lines(s[,8],s[,15],col=alpha("black",0.5))
+  stDev<-sd(s[,15])
+  MaxMin<-max(s[,15])-min(s[,15])
+  ex4SD<-append(ex4SD,stDev)
+  ex4MaxMin<-append(ex4MaxMin,MaxMin)
+}
+
+plot(seq(0,90,by=10),seq(-9,0,by=1),col="white",xlab="mm from occlusal surface",ylab=expression(paste(delta^"18","O")),ylim=c(-7,-1))
+for (i in samp){
+  s<-subset(zebraSamp,specimen==i)
+  lines(s[,8],s[,15],col=alpha("grey",0.5))
+}
+# sub1<-subset(zebraSamp,mm_band>85)
+# maxVal<-max(sub1[,15])
+# sub1<-subset(sub1,d18O_2==maxVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="red",lwd=2)
+# 
+# sub1<-subset(zebraSamp,mm_band>85)
+# minVal<-min(sub1[,15])
+# sub1<-subset(sub1,d18O_2==minVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="blue",lwd=2)
+# 
+# sub1<-zebraSamp[(zebraSamp$mm_band >= 35), ]
+# sub2<-zebraSamp[(zebraSamp$mm_band > 55), ]
+# sub1<-subset(sub1, specimen %!in% sub2$specimen)
+# sub2<-subset(zebraSamp,mm_band > 9999)
+# for (j in sub1$specimen){
+#   sub3<-subset(sub1,specimen==j)
+#   m<-max(sub3$mm_band)
+#   sub3<-subset(sub3,mm_band==m)
+#   sub2<-rbind(sub2,sub3)
+# }
+# maxVal<-max(sub2[,15])
+# sub1<-subset(sub2,d18O_2==maxVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="green",lwd=2)
+# 
+# 
+# minVal<-min(sub2[,15])
+# sub1<-subset(sub2,d18O_2==minVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="purple",lwd=2)
+# 
+# 
+# 
+# sub1<-zebraSamp[(zebraSamp$mm_band >= 10), ]
+# sub2<-zebraSamp[(zebraSamp$mm_band > 20), ]
+# sub1<-subset(sub1, specimen %!in% sub2$specimen)
+# sub2<-subset(zebraSamp,mm_band > 9999)
+# for (j in sub1$specimen){
+#   sub3<-subset(sub1,specimen==j)
+#   m<-max(sub3$mm_band)
+#   sub3<-subset(sub3,mm_band==m)
+#   sub2<-rbind(sub2,sub3)
+# }
+# maxVal<-max(sub2[,15])
+# sub1<-subset(sub2,d18O_2==maxVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="orange",lwd=2)
+# 
+# 
+# minVal<-min(sub2[,15])
+# sub1<-subset(sub2,d18O_2==minVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="cyan",lwd=2)
+cols<-c("red","blue","green","purple","orange","cyan")
+zebraData2<-subset(zebraSamp,!is.na(d18O_2))
+m<-mean(zebraData2$d18O_2)
+s<-sd(zebraData2$d18O_2)
+sub<-subset(zebraSamp,mm_band==1)
+sub1<-subset(sub,d18O_2>(m+s))
+sub2<-subset(sub,d18O_2<(m+s))
+sub2<-subset(sub2,d18O_2>(m-s))
+sub3<-subset(sub,d18O_2<(m+s))
+samples<-sample(sub1$specimen,2)
+samples<-append(samples,sample(sub2$specimen,2))
+samples<-append(samples,sample(sub3$specimen,2))
+
+samples<-c(199,96,151,132,123,47)
+for (i in c(1:length(samples))){
+  sub1<-subset(zebraSamp,specimen==samples[i])
+  lines(sub1[,8],sub1[,15],col=cols[i],lwd=2)
+}
+
+sub2<-subset(zebraSamp,specimen %in% samples)
+boxplot(d18O_2~specimen,data=sub2,col=cols,ylim=c(-7,1),ylab=expression(paste(delta^"18","O")))
+
+sdAmp<-sd(d18O$AMP2)
+sdAmpDown<-0
+sdAmpUp<-(sdAmp*2)
+sdBreaks<-seq(sdAmpDown,sdAmpUp,length.out=40)
+MaxMinAmp<-max(d18O$AMP2)-min(d18O$AMP2)
+MaxMinAmpDown<-0
+MaxMinAmpUp<-MaxMinAmp*2
+MaxMinBreaks<-seq(MaxMinAmpDown,MaxMinAmpUp,length.out=40)
+
+hist(ex4SD,xlim=c(sdAmpDown,sdAmpUp),xlab=expression(paste(delta^"18","O Standard Deviation")),breaks=sdBreaks,main="")
+abline(v=sdAmp,lty=2)
+hist(ex4MaxMin,xlim=c(MaxMinAmpDown,MaxMinAmpUp),xlab=expression(paste(delta^"18","O Max-Min")),breaks=MaxMinBreaks,main="")
+abline(v=MaxMinAmp,lty=2)
+
+```
+
+
+###EXPERIMENT 5 Variable sampling
+#EX5 Step 1: Plotting at every 2nd mm
+```{r}
+
+ex5SD<-c()
+ex5MaxMin<-c()
+#Plot 3: Varible birth dates
+
+plot(seq(0,90,by=10),seq(-9,0,by=1),col="white",xlab="mm from crown",ylab=expression(paste(delta,"18O")),ylim=c(-7,-1))
+for (i in samp){
+  s<-subset(zebraSamp,specimen==i)
+  s<-s[seq(1, nrow(s), 4), ]
+  lines(s[,8],s[,15],col=alpha("black",0.5))
+  stDev<-sd(s[,15])
+  MaxMin<-max(s[,15])-min(s[,15])
+  ex5SD<-append(ex5SD,stDev)
+  ex5MaxMin<-append(ex5MaxMin,MaxMin)
+}
+
+
+sdAmp<-sd(d18O$AMP2)
+sdAmpDown<-0
+sdAmpUp<-(sdAmp*2)
+sdBreaks<-seq(sdAmpDown,sdAmpUp,length.out=40)
+MaxMinAmp<-max(d18O$AMP2)-min(d18O$AMP2)
+MaxMinAmpDown<-0
+MaxMinAmpUp<-MaxMinAmp*2
+MaxMinBreaks<-seq(MaxMinAmpDown,MaxMinAmpUp,length.out=40)
+
+hist(ex5SD,xlim=c(sdAmpDown,sdAmpUp),xlab=expression(paste(delta^"18","O Standard Deviation")),breaks=sdBreaks,main="")
+abline(v=sdAmp,lty=2)
+hist(ex5MaxMin,xlim=c(MaxMinAmpDown,MaxMinAmpUp),xlab=expression(paste(delta^"18","O Max-Min")),breaks=MaxMinBreaks,main="")
+abline(v=MaxMinAmp,lty=2)
+
+```
+
+
+### EXPERIMENT 6: d18O change within sample
+#EX6 Step 1: Plotting
+```{r}
+zebraData<-read.csv("simZebraDataEX4.csv",stringsAsFactors = FALSE)
+ex6SD<-c()
+ex6MaxMin<-c()
+#Plot 3: Varible birth dates
+zebraSamp<-subset(zebraData,model=="High")
+samp<-sample(unique(zebraSamp$specimen),100)
+amp<-sample(c(14,15,16),100,replace = TRUE)
+
+
+plot(seq(0,90,by=10),seq(-9,0,by=1),col="white",xlab="mm from occlusal surface",ylab=expression(paste(delta^"18","O")),ylim=c(-7,-1))
+for (i in c(1:100)){
+  s<-subset(zebraSamp,specimen==samp[i])
+  if (amp[i] ==14){
+    lines(s[,8],s[,14],col=alpha("black",0.5))
+  } else if (amp[i]==15) {
+    lines(s[,8],s[,15],col=alpha("black",0.5))
+  } else {
+  lines(s[,8],s[,16],col=alpha("black",0.5))
+  }
+  # stDev<-sd(s[,15])
+  # MaxMin<-max(s[,15])-min(s[,15])
+  # ex4SD<-append(ex4SD,stDev)
+  # ex4MaxMin<-append(ex4MaxMin,MaxMin)
+}
+
+# plot(seq(0,90,by=10),seq(-9,0,by=1),col="white",xlab="mm from occlusal surface",ylab=expression(paste(delta^"18","O")),ylim=c(-7,-1))
+# for (i in samp){
+#   s<-subset(zebraSamp,specimen==i)
+#   lines(s[,8],s[,15],col=alpha("grey",0.5))
+# }
+# sub1<-subset(zebraSamp,mm_band>85)
+# maxVal<-max(sub1[,15])
+# sub1<-subset(sub1,d18O_2==maxVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="red",lwd=2)
+# 
+# sub1<-subset(zebraSamp,mm_band>85)
+# minVal<-min(sub1[,15])
+# sub1<-subset(sub1,d18O_2==minVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="blue",lwd=2)
+# 
+# sub1<-zebraSamp[(zebraSamp$mm_band >= 35), ]
+# sub2<-zebraSamp[(zebraSamp$mm_band > 55), ]
+# sub1<-subset(sub1, specimen %!in% sub2$specimen)
+# sub2<-subset(zebraSamp,mm_band > 9999)
+# for (j in sub1$specimen){
+#   sub3<-subset(sub1,specimen==j)
+#   m<-max(sub3$mm_band)
+#   sub3<-subset(sub3,mm_band==m)
+#   sub2<-rbind(sub2,sub3)
+# }
+# maxVal<-max(sub2[,15])
+# sub1<-subset(sub2,d18O_2==maxVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="green",lwd=2)
+# 
+# 
+# minVal<-min(sub2[,15])
+# sub1<-subset(sub2,d18O_2==minVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="purple",lwd=2)
+# 
+# 
+# 
+# sub1<-zebraSamp[(zebraSamp$mm_band >= 10), ]
+# sub2<-zebraSamp[(zebraSamp$mm_band > 20), ]
+# sub1<-subset(sub1, specimen %!in% sub2$specimen)
+# sub2<-subset(zebraSamp,mm_band > 9999)
+# for (j in sub1$specimen){
+#   sub3<-subset(sub1,specimen==j)
+#   m<-max(sub3$mm_band)
+#   sub3<-subset(sub3,mm_band==m)
+#   sub2<-rbind(sub2,sub3)
+# }
+# maxVal<-max(sub2[,15])
+# sub1<-subset(sub2,d18O_2==maxVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="orange",lwd=2)
+# 
+# 
+# minVal<-min(sub2[,15])
+# sub1<-subset(sub2,d18O_2==minVal)
+# u1<-sub1[1,1]
+# sub1<-subset(zebraSamp,specimen==u1)
+# lines(sub1[,8],sub1[,15],col="cyan",lwd=2)
+# cols<-c("red","blue","green","purple","orange","cyan")
+# zebraData2<-subset(zebraSamp,!is.na(d18O_2))
+# m<-mean(zebraData2$d18O_2)
+# s<-sd(zebraData2$d18O_2)
+# sub<-subset(zebraSamp,mm_band==1)
+# sub1<-subset(sub,d18O_2>(m+s))
+# sub2<-subset(sub,d18O_2<(m+s))
+# sub2<-subset(sub2,d18O_2>(m-s))
+# sub3<-subset(sub,d18O_2<(m+s))
+# samples<-sample(sub1$specimen,2)
+# samples<-append(samples,sample(sub2$specimen,2))
+# samples<-append(samples,sample(sub3$specimen,2))
+# for (i in c(1:length(samples))){
+#   sub1<-subset(zebraSamp,specimen==samples[i])
+#   lines(sub1[,8],sub1[,15],col=cols[i],lwd=2)
+# }
+# 
+# 
+# 
+# 
+# sdAmp<-sd(d18O$AMP2)
+# sdAmpDown<-0
+# sdAmpUp<-(sdAmp*2)
+# sdBreaks<-seq(sdAmpDown,sdAmpUp,length.out=40)
+# MaxMinAmp<-max(d18O$AMP2)-min(d18O$AMP2)
+# MaxMinAmpDown<-0
+# MaxMinAmpUp<-MaxMinAmp*2
+# MaxMinBreaks<-seq(MaxMinAmpDown,MaxMinAmpUp,length.out=40)
+# 
+# hist(ex4SD,xlim=c(sdAmpDown,sdAmpUp),xlab=expression(paste(delta^"18","O Standard Deviation")),breaks=sdBreaks,main="")
+# abline(v=sdAmp,lty=2)
+# hist(ex4MaxMin,xlim=c(MaxMinAmpDown,MaxMinAmpUp),xlab=expression(paste(delta^"18","O Max-Min")),breaks=MaxMinBreaks,main="")
+# abline(v=MaxMinAmp,lty=2)
+
+```
+
+#BULK SAMPLE TEST
+```{r}
+library(tidyverse)
+tib<-read_csv("simZebraDataEX4.csv")
+p7<-tib %>% filter(model=="Constant") %>% group_by(specimen)  %>% summarize(mean(d18O_3)) %>% ggplot(aes(x=`mean(d18O_3)`)) + geom_histogram() + geom_vline(xintercept=-4,color="red",lty=2) + labs(x=expression(paste("Mean ",delta^"18","O")),title="Bulk Sample Linear") + theme_classic()
+p7
+
+p7_1<-tib %>% filter(model=="Constant") %>% group_by(specimen)  %>% summarize(mean(d18O_3),n()) #%>% ggplot(aes(x=`n()`,y=`mean(d18O_3)`)) + geom_point() +
+#  geom_hline(yintercept=-4,color="red",lty=2) + 
+#  labs(x="Crown height (mm)",y=expression(paste("Mean ",delta^"18","O")),title="Bulk Sample Linear") + theme_classic()
+p7_1
+
+p8<-tib %>% filter(model=="High") %>% group_by(specimen)  %>% summarize(mean(d18O_3)) %>% ggplot(aes(x=`mean(d18O_3)`)) + geom_histogram() + geom_vline(xintercept=-4,color="red",lty=2) + labs(x=expression(paste("Mean ",delta^"18","O")),title="Bulk Sample Non-linear") + theme_classic()
+p8
+
+p8_1<-tib %>% filter(model=="High") %>% group_by(specimen)  %>% summarize(mean(d18O_3),n())#%>% #ggplot(aes(x=`n()`,y=`mean(d18O_3)`)) + geom_point() +
+#  geom_hline(yintercept=-4,color="red",lty=2) + 
+#  labs(x="Crown height (mm)",y=expression(paste("Mean ",delta^"18","O")),title="Bulk Sample Non-linear") + theme_classic()
+p8_1
+
+p9<-tib %>% filter(model=="High") %>% group_by(specimen)  %>% filter( n() >=20) %>% summarize(mean(d18O_3)) %>% ggplot(aes(x=`mean(d18O_3)`)) + geom_histogram() + geom_vline(xintercept=-4,color="red",lty=2) + labs(x=expression(paste("Mean ",delta^"18","O")),title="Bulk Sample Non-linear 20mm cutoff") + theme_classic()
+p9
+
+hist(p7_1$`n()`)
+hist(p8_1$`n()`)
+plot(p7_1$`n()`,p7_1$`mean(d18O_3)`)
+plot(p8_1$`n()`,p8_1$`mean(d18O_3)`,col="red")
+
+sub<-tib %>% filter(model=="Constant") %>% group_by(specimen)  %>% summarize(mean(d18O_3),n()) %>% filter(`n()` > 30 & `n()` < 33)
+
+sub2<-tib %>% filter(specimen %in% sub$specimen)
+hist(sub2$birth_day)
+
+p8_2<-tib %>%  filter(model=="High") %>% group_by(specimen) %>% slice_sample(n=1) 
+
+p8_2 <- p8_2 %>% slice_sample(n=100) #%>% ggplot(aes(x=d18O_3)) + geom_histogram() + geom_vline(xintercept=-4,color="red",lty=2) + labs(x=expression(paste("Sampled ",delta^"18","O")),title="Bulk Sample Non-linear") + theme_classic()
+p8_2
+```
+
+#test
+```{r}
+library(tidyverse)
+tib<-read_csv("simZebraDataEX4.csv")
+p10<-tib %>% filter(model=="Constant",specimen<100) %>% ggplot(aes(x=reorder(as_factor(specimen),d18O_2,FUN=median),y=d18O_2)) + geom_boxplot() + geom_hline(yintercept=-4,color="red",lty=2) + labs(y=expression(paste(delta^"18","O")),title="Bulk Sample Linear") + theme_classic() +   theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+p10
+
+p11<-tib %>% filter(model=="High",specimen<100) %>% ggplot(aes(x=reorder(as_factor(specimen),d18O_2,FUN=median),y=d18O_2)) + geom_boxplot() + geom_hline(yintercept=-4,color="red",lty=2) + labs(y=expression(paste(delta^"18","O")),title="Bulk Sample Non-linear") + theme_classic() +   theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+p11
+
+
+p12<-tib %>% filter(model=="Constant",specimen>300) %>%
+ggplot(aes(x=reorder(as_factor(specimen),d18O_2,FUN=mean),y=d18O_2)) +
+  geom_point(stat="summary",fun.y="mean") +
+  geom_hline(yintercept=-4,color="red",lty=2) + labs(y=expression(paste(delta^"18","O")),title="Bulk Sample Linear") + theme_classic() +   theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+p12
+
+p13<-tib %>% filter(model=="High",specimen>300) %>%
+ggplot(aes(x=reorder(as_factor(specimen),d18O_2,FUN=mean),y=d18O_2)) +
+  geom_point(stat="summary",fun.y=mean) +
+  geom_hline(yintercept=-4,color="red",lty=2) + labs(y=expression(paste(delta^"18","O")),title="Bulk Sample Non-linear") + theme_classic() +   theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+p13
+```
+
+```{r}
+
+library(tidyverse)
+tib<-read_csv("simZebraDataEX4.csv")
+meansConstant<-c()
+meansHigh<-c()
+
+for (i in c(1:200)){
+  c<-filter(tib,specimen==i,model=="Constant")
+  meansConstant<-append(meansConstant,mean(c$d18O_2))
+   h<-filter(tib,specimen==i,model=="High")
+  meansHigh<-append(meansHigh,mean(h$d18O_2))
+}
+
+hist(meansConstant)
+hist(meansHigh)
+
+
+ c<-filter(tib,model=="Constant")
+ h<-filter(tib,model=="High")
+
+ hist(c$d18O_3)
+```
+
+
+```{r}
+A<-4
+k<-0.2
+y = A * e^(-kx) * sin(ωt + φ)
+```
+
