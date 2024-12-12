@@ -63,7 +63,7 @@ mortFun<-approxfun(zebraAge,zebraMort)
 ##Function to get loss of crown height for a given age
 #ch0 = theoretical max crown height
 #t = time in months (ageMonths)
-#te = months to eruption (eruption_month)
+#te = months to occlusion (wearStartMonth)
 #PEL = Potential ecological longevity (max_months)
 
 crownWear<-function(ch0,t,te,PEL){
@@ -88,9 +88,9 @@ n<-1000
 maxYears<-24
 #Month when mineralization starts (start isotope accumulation)
 mineralizationStartMonth<-21
-#Month when tooth erupts (stop isotope accumulation)
+#Month when tooth mineralization ends (stop isotope accumulation)
 mineralizationStopMonth<-55
-#Month when tooth begins to wear (eruption)
+#Month when tooth begins to wear (occlusion)
 wearStartMonth<-45
 #Mean crown height (mm)
 maxCrownHeight<-87.5
@@ -1067,7 +1067,7 @@ ex5MaxMin<-c()
 plot(seq(0,90,by=10),seq(-9,0,by=1),col="white",xlab="mm from crown",ylab=expression(paste(delta,"18O")),ylim=c(-7,-1))
 for (i in samp){
   s<-subset(zebraSamp,specimen==i)
-  s<-s[seq(1, nrow(s), 4), ]
+  s<-s[seq(1, nrow(s), 5), ]
   lines(s[,8],s[,15],col=alpha("black",0.5))
   stDev<-sd(s[,15])
   MaxMin<-max(s[,15])-min(s[,15])

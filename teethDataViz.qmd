@@ -78,7 +78,7 @@ d18O<-read_csv("sim_d18O.csv") %>%
 ggplot(d18O,aes(x=as_date(DAY,origin="2000-12-21"),y=d18O,color=case_match(Amplitude,"AMP1"~"1","AMP2"~"2","AMP3"~"3","AMP4"~"4"))) +
   geom_hline(yintercept=-4,linetype=2)+
   geom_line(lwd=1.1) +
-  scale_color_brewer(palette="Set1") +
+  scale_color_manual(values=palette.colors(4,palette="R4")) +
   scale_x_date(date_labels = "%b", date_breaks = '3 months') +
   theme_classic() +
   labs(x="",y=expression(paste(delta^"18","O")),color="Amplitude (\u{2030})") +
@@ -153,14 +153,14 @@ ggplot(Ex4_Amp3_samp,aes(x=mm_band,y=d18O,group=as_factor(specimen),color=as_fac
    geom_hline(yintercept=-4,linetype=2)+
   geom_line(lwd=1.1) +
   theme_classic() +
-  scale_color_brewer(palette="Set1") +
+  scale_color_manual(values=palette.colors(5,palette="R4")) +
   labs(x="Distance from Occlusal Surface (mm)",y=expression(paste(delta^"18","O")),color="Specimen #")+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
 
 
 ```
 
-Boxplots if intratooth variation
+Boxplots of intratooth variation
 
 ```{r}
 ggplot(Ex4_Amp3_samp,aes(x=as_factor(specimen),y=d18O,group=as_factor(specimen),color=as_factor(specimen))) + 
@@ -168,9 +168,10 @@ ggplot(Ex4_Amp3_samp,aes(x=as_factor(specimen),y=d18O,group=as_factor(specimen),
   geom_boxplot(show.legend = FALSE) +
   geom_hline(yintercept=-4,linetype=2)+
   theme_classic() +
-  scale_color_brewer(palette="Set1") +
+  scale_color_manual(values=palette.colors(5,palette="R4")) +
   labs(x="Specimen #",y=expression(paste(delta^"18","O")),color="Specimen #")+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+
 ```
 
 ## BULK SAMPLING METHOD A: Estimating amplitude from random 1mm bands (Non-linear growth, Amplitude = 3)
@@ -273,4 +274,63 @@ ggplot(data,aes(x=as_factor(size),y=bootstrapAmp)) +
   ylim(c(1,4)) +
   labs(x="Sample Size (# of teeth)",y="Estimated Amplitude (\u{2030})") +
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+```
+
+## Assessing amplitude
+
+```{r}
+set.seed(303)
+ampMethodCheck<-Ex4 %>%  
+  filter(model=="High") %>% 
+  drop_na(d18O_3) %>%
+  group_by(as_factor(specimen)) %>%
+  slice_sample(n=200) %>%
+  arrange(specimen,mm_band) %>%
+  summarize(stdev=sd(d18O_3),min=min(d18O_3),max=max(d18O_3)) %>%
+  mutate(minmax=max-min) %>%
+  rename(specimen=`as_factor(specimen)`)%>%
+  select(specimen,stdev,minmax) %>%
+  pivot_longer(
+    cols=stdev:minmax,
+    names_to="method",
+    values_to="value"
+  ) %>%
+  mutate(samp_freq="1:1 mm")
+
+mids<-rep(c(2.124,6),nrow(ampMethodCheck)/2)
+ampMethodCheck<-bind_cols(ampMethodCheck,mids=mids)
+
+ampMethodCheck2<-Ex4 %>%  
+  filter(model=="High") %>% 
+  drop_na(d18O_3) %>%
+  group_by(as_factor(specimen)) %>%
+  slice_sample(n=200) %>%
+  filter(mm_band %% 5 == 0) %>%
+  arrange(specimen,mm_band) %>%
+  summarize(stdev=sd(d18O_3),min=min(d18O_3),max=max(d18O_3)) %>%
+  mutate(minmax=max-min) %>%
+  rename(specimen=`as_factor(specimen)`)%>%
+  select(specimen,stdev,minmax) %>%
+  pivot_longer(
+    cols=stdev:minmax,
+    names_to="method",
+    values_to="value"
+  )%>%
+  mutate(samp_freq="1:5 mm")
+
+mids<-rep(c(2.124,6),nrow(ampMethodCheck2)/2)
+ampMethodCheck2<-bind_cols(ampMethodCheck2,mids=mids)
+
+ampMethodCheckAll<-bind_rows(ampMethodCheck,ampMethodCheck2) %>%
+  mutate(method=recode(method,"minmax"="Min-Max","stdev"="Standard Deviation"))
+
+ggplot(ampMethodCheckAll,aes(x=value)) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = mids),data=ampMethodCheckAll,lty=2,lwd=1,col="darkred")  +
+  facet_grid(vars(samp_freq),vars(method),scales="free_x") +
+  theme_bw() +
+  labs(x="Simulated estimate (\u{2030})",y="Frequency") +
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+
+
 ```
