@@ -20,7 +20,7 @@ range <- max(EFTM$d18O) - min(EFTM$d18O)
 amp_est <- diff(range(EFTM$d18O)/2)
 
 ## Calculations of Elandsfontein summary stats
-Ex4<-read.csv("simZebraDataEX4.csv")
+Ex4<-read.csv("outputs/simZebraDataEX4.csv")
 Ex4_high<-Ex4 %>%  filter(model=="High") %>% drop_na()
 sampleSizes<-as.numeric(nrow(EFTM)) #set sample size to EFTM sample count
 
