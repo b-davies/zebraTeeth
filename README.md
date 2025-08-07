@@ -1,12 +1,6 @@
 # Modeling equid tooth growth, the accumulation of stable isotopes in dental enamel, and subsequent sampling for reconstructing paleoenvironments
 This repository contains code and data associated with a forthcoming manuscript "Simulating the formation of herbivore tooth death assemblages to improve
-expectations for paleoenvironmental reconstruction from intra-tooth isotopic analysis," currently under review in _Journal of Archaeological Science_. The code is written using the R Statistical Computing platform (v4.5.0):
-
-  R Core Team (2025). _R: A Language and Environment
-  for Statistical Computing_. R Foundation for
-  Statistical Computing, Vienna, Austria.
-  <https://www.R-project.org/>.
-
+expectations for paleoenvironmental reconstruction from intra-tooth isotopic analysis," currently under review in _Journal of Archaeological Science_. 
 ## Description of repository
 Included in the repository are:
  - teethModel.Rproj: An R project file that is used to establish the working directory for the associated code
@@ -32,7 +26,16 @@ To reproduce the published results or modify the outcomes, it is highly recommen
 - To **visualize the output data and reproduce the visualizations used in the study**, use the *teethDataViz.qmd* file
 - For the **Elandsfontein data assessment (Table 3)**, use the *EFTM_analysis.R* file
 
-## R Session Info
+## Software Information
+The code used in this project was written using the R Statistical Computing platform (v4.5.0):
+
+  R Core Team (2025). _R: A Language and Environment
+  for Statistical Computing_. R Foundation for
+  Statistical Computing, Vienna, Austria.
+  <https://www.R-project.org/>.
+
+### Session Info
+
 ```
 R version 4.5.0 (2025-04-11 ucrt)
 Platform: x86_64-w64-mingw32/x64
