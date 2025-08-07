@@ -27,7 +27,7 @@ Included in the repository are:
    - EFTM Equus d18O.xlsx: A Microsoft Excel spreadsheet file containing measured d18O from zebra teeth recovered from the South Afrcan site of Elandsfontein
 
 ## Instructions
-To reproduce the published results or modify the outcomes, it is highly recommended to use Posit RStudio (2025.05.1 Build 513 used here), and open the associated R project file (teethModel.Rproj). 
+To reproduce the published results or modify the outcomes, it is highly recommended to use [Posit RStudio](https://posit.co/download/rstudio-desktop/) (2025.05.1 Build 513 used here), and open the associated R project file (teethModel.Rproj). 
 - To run the **simulation** code, use the *zebraTeethSim8.Rmd* file (Note: To overwrite the published output datafiles, uncomment lines starting with 'write.csv')
 - To **visualize the output data and reproduce the visualizations used in the study**, use the *teethDataViz.qmd* file
 - For the **Elandsfontein data assessment (Table 3)**, use the *EFTM_analysis.R* file
