@@ -55,7 +55,7 @@ ggplot(birthDeath,aes(x=died)) +
 ```{r}
 #| echo: TRUE
 #| message: FALSE
-toothGrowth<-read_csv("growthRates.csv") %>%
+toothGrowth<-read_csv("data/growthRates.csv") %>%
   pivot_longer(cols=constant:nonLinear,names_to="Model",values_to="crownHeight")
 ggplot(toothGrowth,aes(x=day,y=crownHeight,color=fct_recode(Model,Constant="constant","Non-linear"="nonLinear"))) +
   geom_line(lwd=1.1) +
@@ -94,7 +94,7 @@ Experiment 1: Just the constant model
 ```{r}
 #| echo: TRUE
 #| message: FALSE
-Ex1<-read_csv("simZebraDataEX12.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
+Ex1<-read_csv("outputs/simZebraDataEX12.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
 Ex1_Amp3<-filter(Ex1,Amplitude==3,specimen==1)
 Ex1_Amp3_con<-filter(Ex1_Amp3,model=="Constant")
 
@@ -124,7 +124,7 @@ ggplot(Ex1_Amp3,aes(x=mm_band,y=d18O,color=fct_recode(model,"Non-Linear" = "High
 ## EX 3 Non-linear growth with variable birth season ( Amplitude = 3)
 
 ```{r}
-Ex3<-read_csv("simZebraDataEX3.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
+Ex3<-read_csv("outputs/simZebraDataEX3.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
 uv<-unique(Ex3$specimen)
 samp<-sample(uv,50,replace=FALSE)
 Ex3_Amp3<-filter(Ex3,Amplitude==3,model=="High", specimen %in% samp)
@@ -143,7 +143,7 @@ Note: samples chosen random
 
 ```{r}
 set.seed(303) #to keep the sampling of teeth consistent
-Ex4<-read_csv("simZebraDataEX4.csv") 
+Ex4<-read_csv("outputs/simZebraDataEX4.csv") 
 Ex4_pivot<-Ex4 %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
 uv<-unique(Ex4$specimen)
 samp<-sample(uv,5,replace=FALSE)
