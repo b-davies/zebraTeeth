@@ -5,7 +5,7 @@ expectations for paleoenvironmental reconstruction from intra-tooth isotopic ana
 Included in the repository are:
  - teethModel.Rproj: An R project file that is used to establish the working directory for the associated code
  - zebraTeethSim8.Rmd: An RMarkdown document containing the code used for the simulation of equid tooth growth
- - teethDataViz.qmd: A Quarto document containing the code used to generate visualizations of the data from the simulation
+ - teethDataViz_revised.qmd: A Quarto document containing the code used to generate visualizations of the data from the simulation
  - EFTM_analysis.R: An R script file used for the comparitive analysis between simulation outcomes and data from the South Afrcan site of Elandsfontein
  - A **data** folder, containing
    - birthDeath.csv: A comma-separated values file containing fertility and mortality profiles for the equid tooth simulations
