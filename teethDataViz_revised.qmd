@@ -1,0 +1,392 @@
+---
+title: "Zebra Teeth Simulation Outcomes"
+author: "Ben Davies, Alex Norwood, Tyler Faith"
+format: html
+editor: visual
+---
+
+## Load packages
+
+```{r}
+#| echo: TRUE
+#| message: FALSE
+library(tidyverse)
+
+```
+
+## Birth and mortality profiles
+
+Birth
+
+```{r}
+#| echo: TRUE
+#| message: FALSE
+birthDeath<-read_csv("birthDeath.csv")
+birthDeath$born<-month.abb[birthDeath$born]
+
+ggplot(birthDeath,aes(x=fct_relevel(as_factor(born),"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))) +
+  geom_bar(fill="darkblue") +
+  theme_classic() +
+  labs(x="Birth month",y="n")  +
+  theme(
+    axis.text=element_text(size=12),
+    axis.title=element_text(size=14),
+    axis.text.x = element_text(angle = 45,hjust=1))
+
+```
+
+Death
+
+```{r}
+#| warning: false
+#| message: false
+#| echo: true
+ggplot(birthDeath,aes(x=died)) +
+  geom_histogram(fill="darkred") +
+  theme_classic() +
+  labs(x="Age at death (years)",y="n") +
+  theme(
+    axis.text=element_text(size=12),
+    axis.title=element_text(size=14))
+```
+
+## Tooth growth models
+
+```{r}
+#| echo: TRUE
+#| message: FALSE
+toothGrowth<-read_csv("growthRates.csv") %>%
+  pivot_longer(cols=constant:nonLinear,names_to="Model",values_to="crownHeight")
+ggplot(toothGrowth,aes(x=day,y=crownHeight,color=fct_recode(Model,Constant="constant","Non-linear"="nonLinear"))) +
+  geom_line(lwd=1.1) +
+  scale_color_manual(values=c("black","darkorange")) +
+  theme_classic() +
+  labs(x="Days since start of mineralization",y="Crown Height (\u{03BC}m)",color="Model") +
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+  
+```
+
+## Model 𝝳^18^O signals
+
+Amplitudes of 1, 2, 3, and 4‰ were simulated; most results below are based on the 3‰ signal.
+
+```{r}
+#| echo: TRUE
+#| message: FALSE
+d18O<-read_csv("sim_d18O.csv") %>%
+  pivot_longer(cols=AMP1:AMP4,names_to="Amplitude",values_to="d18O")
+ggplot(d18O,aes(x=as_date(DAY,origin="2000-12-21"),y=d18O,color=case_match(Amplitude,"AMP1"~"1","AMP2"~"2","AMP3"~"3","AMP4"~"4"))) +
+  geom_hline(yintercept=-4,linetype=2)+
+  geom_line(lwd=1.1) +
+  scale_color_manual(values=palette.colors(4,palette="R4")) +
+  scale_x_date(date_labels = "%b", date_breaks = '3 months') +
+  theme_classic() +
+  labs(x="",y=expression(paste(delta^"18","O")),color="Amplitude (\u{2030})") +
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+```
+
+## Constant vs non-linear growth rate (no wear; Amplitude = 3)
+
+These teeth come from animals that are all born on the same day (Jan 1) and die after 55 months.
+
+Just the constant model:
+
+```{r}
+#| echo: TRUE
+#| message: FALSE
+Ex1<-read_csv("simZebraDataEX12.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
+Ex1_Amp3<-filter(Ex1,Amplitude==3,specimen==1)
+Ex1_Amp3_con<-filter(Ex1_Amp3,model=="Constant")
+
+ggplot(Ex1_Amp3_con,aes(x=mm_band,y=d18O)) + 
+  geom_line() +
+   geom_hline(yintercept=-4,linetype=2)+
+  geom_line(lwd=1.1) +
+  theme_classic() +
+  labs(x="Distance from Occlusal Surface (mm)",y=expression(paste(delta^"18","O")))+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+
+
+```
+
+Constant and non-linear
+
+```{r}
+ggplot(Ex1_Amp3,aes(x=mm_band,y=d18O,color=fct_recode(model,"Non-Linear" = "High"))) + geom_line() +
+   geom_hline(yintercept=-4,linetype=2)+
+  geom_line(lwd=1.1) +
+  scale_color_manual(values=c("black","darkorange")) +
+  theme_classic() +
+  labs(x="Distance from Occlusal Surface (mm)",y=expression(paste(delta^"18","O")),color="Model")+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+```
+
+## Non-linear growth with variable birth season ( Amplitude = 3)
+
+```{r}
+Ex3<-read_csv("simZebraDataEX3.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
+uv<-unique(Ex3$specimen)
+samp<-sample(uv,50,replace=FALSE)
+Ex3_Amp3<-filter(Ex3,Amplitude==3,model=="High", specimen %in% samp)
+
+ggplot(Ex3_Amp3,aes(x=mm_band,y=d18O,group=specimen,color=specimen)) + 
+   geom_hline(yintercept=-4,linetype=2)+
+  geom_line(alpha=0.8,color="grey") +
+  theme_classic() +
+  labs(x="Distance from Occlusal Surface (mm)",y=expression(paste(delta^"18","O"))) +
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+```
+
+## Non-linear growth with variable birth season and death age (Amplitude = 3)
+
+```{r}
+set.seed(303) #to keep the sampling of teeth consistent
+Ex4<-read_csv("simZebraDataEX4.csv") 
+Ex4_pivot<-Ex4 %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
+uv<-unique(Ex4$specimen)
+#samp<-sample(uv,5,replace=FALSE) #for random sample
+samp<-c(220,306,69,273,150) #for sample in manuscript
+Ex4_Amp3_samp<-filter(Ex4_pivot,Amplitude==3,model=="High", specimen %in% samp)
+
+Ex4_Amp3_samp <- Ex4_Amp3_samp %>%
+  mutate(specimen = fct_reorder(as.factor(specimen), age_at_death, .fun = min))
+
+Ex4_Amp3_samp <- Ex4_Amp3_samp %>%
+  group_by(specimen) %>%
+  mutate(age_label = paste0(specimen, " (", round(unique(age_at_death), 2), ")")) %>%
+  ungroup() %>%
+  mutate(age_label = fct_reorder(age_label, age_at_death))
+
+ggplot(Ex4_Amp3_samp, aes(x = mm_band, y = d18O, group = age_label, color = age_label)) + 
+  geom_hline(yintercept = -4, linetype = 2) +
+  geom_line(linewidth = 1.1) +
+  theme_classic() +
+  scale_color_manual(values = palette.colors(5, palette = "Classic Tableau")) +
+  labs(
+    x = "Distance from Occlusal Surface (mm)",
+    y = expression(paste(delta^"18", "O")),
+    color = "Specimen #\n(Age at death)"
+  ) +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14)
+  )
+```
+
+Boxplots of intratooth variation
+
+```{r}
+ggplot(Ex4_Amp3_samp,aes(x=as_factor(specimen),y=d18O,group=as_factor(specimen),color=as_factor(specimen))) + 
+   geom_hline(yintercept=-4,linetype=2)+
+  geom_boxplot(show.legend = FALSE) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3, color = "black", show.legend = FALSE) +
+  geom_hline(yintercept=-4,linetype=2)+
+  theme_classic() +
+  scale_color_manual(values=palette.colors(5,palette="Classic Tableau")) +
+  labs(x="Specimen #",y=expression(paste(delta^"18","O")),color="Specimen #")+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+
+```
+
+## Assessing amplitude
+
+```{r}
+set.seed(303)
+
+ampMethodCheck <- Ex4 %>%
+  filter(model == "High") %>%
+  drop_na(d18O_3) %>%
+  mutate(specimen = as_factor(specimen)) %>%
+  filter(specimen %in% sample(unique(specimen), 100)) %>%  # randomly pick 100 specimens
+  group_by(specimen) %>%
+  slice_sample(n = 200) %>%
+  arrange(specimen, mm_band) %>%
+  summarize(
+    stdev = sd(d18O_3),
+    min = min(d18O_3),
+    max = max(d18O_3),
+    .groups = "drop"
+  ) %>%
+  mutate(minmax = max - min) %>%
+  dplyr::select(specimen, stdev, minmax) %>%
+  pivot_longer(
+    cols = c(stdev, minmax),
+    names_to = "method",
+    values_to = "value"
+  ) %>%
+  mutate(samp_freq = "1:1 mm")
+
+mids<-rep(c(2.124,6),nrow(ampMethodCheck)/2)
+ampMethodCheck<-bind_cols(ampMethodCheck,mids=mids)
+
+ampMethodCheck2<-Ex4 %>%  
+  filter(model=="High") %>% 
+  drop_na(d18O_3) %>%
+  mutate(specimen = as_factor(specimen)) %>%
+  filter(specimen %in% sample(unique(specimen), 100)) %>%  # randomly pick 100 specimens
+  group_by(as_factor(specimen)) %>%
+  slice_sample(n=200) %>%
+  filter(mm_band %% 3 == 0) %>%
+  arrange(specimen,mm_band) %>%
+  summarize(stdev=sd(d18O_3),min=min(d18O_3),max=max(d18O_3)) %>%
+  mutate(minmax=max-min) %>%
+  rename(specimen=`as_factor(specimen)`)%>%
+  dplyr::select(specimen, stdev, minmax) %>%  # use dplyr::select to avoid masking issues
+  pivot_longer(
+    cols=stdev:minmax,
+    names_to="method",
+    values_to="value"
+  )%>%
+  mutate(samp_freq="1:3 mm")
+
+mids<-rep(c(2.124,6),nrow(ampMethodCheck2)/2)
+ampMethodCheck2<-bind_cols(ampMethodCheck2,mids=mids)
+
+ampMethodCheck3<-Ex4 %>%  
+  filter(model=="High") %>% 
+  drop_na(d18O_3) %>%
+  mutate(specimen = as_factor(specimen)) %>%
+  filter(specimen %in% sample(unique(specimen), 100)) %>%  # randomly pick 100 specimens
+  group_by(as_factor(specimen)) %>%
+  slice_sample(n=200) %>%
+  filter(mm_band %% 5 == 0) %>%
+  arrange(specimen,mm_band) %>%
+  summarize(stdev=sd(d18O_3),min=min(d18O_3),max=max(d18O_3)) %>%
+  mutate(minmax=max-min) %>%
+  rename(specimen=`as_factor(specimen)`)%>%
+  dplyr::select(specimen, stdev, minmax) %>%  # use dplyr::select to avoid masking issues
+  pivot_longer(
+    cols=stdev:minmax,
+    names_to="method",
+    values_to="value"
+  )%>%
+  mutate(samp_freq="1:5 mm")
+
+mids<-rep(c(2.124,6),nrow(ampMethodCheck3)/2)
+ampMethodCheck3<-bind_cols(ampMethodCheck3,mids=mids)
+
+ampMethodCheckAll<-bind_rows(ampMethodCheck,ampMethodCheck2,ampMethodCheck3) %>%
+  mutate(method=recode(method,"minmax"="Max-Min","stdev"="Standard Deviation"))
+
+ggplot(ampMethodCheckAll,aes(x=value)) +
+  geom_histogram() +
+  geom_vline(aes(xintercept = mids),data=ampMethodCheckAll,lty=2,lwd=1,col="darkred")  +
+  facet_grid(vars(samp_freq),vars(method),scales="free_x") +
+  theme_bw() +
+  labs(x="Simulated estimate (\u{2030})",y="Frequency") +
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+
+
+```
+
+## Bulk Sampling Comparison
+
+```{r}
+# Base filtered dataset
+Ex4_high <- Ex4 %>%
+  filter(model == "High") %>%
+  drop_na()
+
+# With cutoff
+cutoff <- 20
+Ex4_highCut <- Ex4_high %>%
+  group_by(specimen) %>%
+  filter(n() >= cutoff) %>%
+  ungroup()
+
+sampleSizes <- c(10, 20, 50, 100)
+
+# Initialize empty list to collect all results
+all_data <- list()
+
+# ---- Method A, No Cutoff ----
+for (i in sampleSizes) {
+  for (j in 1:100) {
+    samp <- Ex4_high %>%
+      group_by(specimen) %>%
+      slice_sample(n = 1) %>%
+      ungroup() %>%
+      slice_sample(n = i)
+    
+    all_data[[length(all_data) + 1]] <- data.frame(
+      size = i,
+      range = diff(range(samp$d18O_3)),
+      method = "A",
+      cutoff = "None"
+    )
+  }
+}
+
+# ---- Method A, With Cutoff: Estimating amplitude from sampling a random 1mm band with 20mm size cutoff (Non-linear growth, Amplitude = 3) ----
+for (i in sampleSizes) {
+  for (j in 1:100) {
+    samp <- Ex4_highCut %>%
+      group_by(specimen) %>%
+      slice_sample(n = 1) %>%
+      ungroup() %>%
+      slice_sample(n = i)
+    
+    all_data[[length(all_data) + 1]] <- data.frame(
+      size = i,
+      range = diff(range(samp$d18O_3)),
+      method = "A",
+      cutoff = "20mm"
+    )
+  }
+}
+
+# ---- Method B, No Cutoff: Estimating amplitude from averaged sample taken along growth axis (Non-linear growth, Amplitude = 3) ----
+for (i in sampleSizes) {
+  for (j in 1:100) {
+    samp <- Ex4_high %>%
+      group_by(specimen) %>%
+      slice_sample(n = i) %>%
+      summarize(mean = mean(d18O_3), .groups = "drop")
+    
+    all_data[[length(all_data) + 1]] <- data.frame(
+      size = i,
+      range = diff(range(samp$mean)),
+      method = "B",
+      cutoff = "None"
+    )
+  }
+}
+
+# ---- Method B, With Cutoff: Estimating amplitude from averaged sample taken along growth axis with 20 mm cutoff (Non-linear growth, Amplitude = 3) ----
+for (i in sampleSizes) {
+  for (j in 1:100) {
+    samp <- Ex4_highCut %>%
+      group_by(specimen) %>%
+      slice_sample(n = i) %>%
+      summarize(mean = mean(d18O_3), .groups = "drop")
+    
+    all_data[[length(all_data) + 1]] <- data.frame(
+      size = i,
+      range = diff(range(samp$mean)),
+      method = "B",
+      cutoff = "20mm"
+    )
+  }
+}
+
+# Combine all into one dataframe
+combined_data <- bind_rows(all_data)
+
+combined_data$cutoff <- factor(combined_data$cutoff, levels = c("None", "20mm"))
+
+# ---- Plot ----
+ggplot(combined_data, aes(x = factor(size), y = range)) +
+  geom_hline(yintercept = 6, linetype = 2, color = "darkred") +
+  geom_boxplot() +
+  facet_grid(vars(method),vars(cutoff)) +
+  theme_classic() +
+  labs(x = "Sample Size (# of teeth)", y = "Estimated Range (‰)") +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    strip.text = element_text(size = 12)
+  )
+```
