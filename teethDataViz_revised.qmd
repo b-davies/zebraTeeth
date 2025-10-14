@@ -16,12 +16,12 @@ library(tidyverse)
 
 ## Birth and mortality profiles
 
-Birth
+Equus birthrates drawn from Penzhorn, B. L. "Reproductive characteristics of a free-ranging population of Cape mountain zebra (Equus zebra zebra)." *Reproduction* 73, no. 1 (1985): 51-57
 
 ```{r}
 #| echo: TRUE
 #| message: FALSE
-birthDeath<-read_csv("birthDeath.csv")
+birthDeath<-read_csv("data/birthDeath.csv")
 birthDeath$born<-month.abb[birthDeath$born]
 
 ggplot(birthDeath,aes(x=fct_relevel(as_factor(born),"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))) +
@@ -35,7 +35,7 @@ ggplot(birthDeath,aes(x=fct_relevel(as_factor(born),"Jan","Feb","Mar","Apr","May
 
 ```
 
-Death
+Equus mortality rates drawn from Spinage, C. A. "African ungulate life tables." *Ecology* 53, no. 4 (1972): 645-652.
 
 ```{r}
 #| warning: false
@@ -52,10 +52,12 @@ ggplot(birthDeath,aes(x=died)) +
 
 ## Tooth growth models
 
+The following tooth growth rate models were used in the simulatation, based on a [beta distribution](https://en.wikipedia.org/wiki/Beta_distribution) with shape parameters \[1,1\] for constant, and \[1,3\] for non-linear, superimposed over the period of growth (21-55 months of age, or roughly 1020 days).
+
 ```{r}
 #| echo: TRUE
 #| message: FALSE
-toothGrowth<-read_csv("growthRates.csv") %>%
+toothGrowth<-read_csv("data/growthRates.csv") %>%
   pivot_longer(cols=constant:nonLinear,names_to="Model",values_to="crownHeight")
 ggplot(toothGrowth,aes(x=day,y=crownHeight,color=fct_recode(Model,Constant="constant","Non-linear"="nonLinear"))) +
   geom_line(lwd=1.1) +
@@ -68,12 +70,12 @@ ggplot(toothGrowth,aes(x=day,y=crownHeight,color=fct_recode(Model,Constant="cons
 
 ## Model 𝝳^18^O signals
 
-Amplitudes of 1, 2, 3, and 4‰ were simulated; most results below are based on the 3‰ signal.
+Amplitudes of 1, 2, 3, and 4‰ were simulated, each with a central value of 4 and following an annual cycle consistent with southern hemisphere seasons; results below are based on the 3‰ signal unless otherwise noted.
 
 ```{r}
 #| echo: TRUE
 #| message: FALSE
-d18O<-read_csv("sim_d18O.csv") %>%
+d18O<-read_csv("data/sim_d18O.csv") %>%
   pivot_longer(cols=AMP1:AMP4,names_to="Amplitude",values_to="d18O")
 ggplot(d18O,aes(x=as_date(DAY,origin="2000-12-21"),y=d18O,color=case_match(Amplitude,"AMP1"~"1","AMP2"~"2","AMP3"~"3","AMP4"~"4"))) +
   geom_hline(yintercept=-4,linetype=2)+
@@ -87,14 +89,14 @@ ggplot(d18O,aes(x=as_date(DAY,origin="2000-12-21"),y=d18O,color=case_match(Ampli
 
 ## Constant vs non-linear growth rate (no wear; Amplitude = 3)
 
-These teeth come from animals that are all born on the same day (Jan 1) and die after 55 months.
+These teeth come from simulated animals that are all born on the same day (Jan 1) and die after 55 months.
 
 Just the constant model:
 
 ```{r}
 #| echo: TRUE
 #| message: FALSE
-Ex1<-read_csv("simZebraDataEX12.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
+Ex1<-read_csv("outputs/simZebraDataEX12.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
 Ex1_Amp3<-filter(Ex1,Amplitude==3,specimen==1)
 Ex1_Amp3_con<-filter(Ex1_Amp3,model=="Constant")
 
@@ -109,7 +111,7 @@ ggplot(Ex1_Amp3_con,aes(x=mm_band,y=d18O)) +
 
 ```
 
-Constant and non-linear
+Constant and non-linear models
 
 ```{r}
 ggplot(Ex1_Amp3,aes(x=mm_band,y=d18O,color=fct_recode(model,"Non-Linear" = "High"))) + geom_line() +
@@ -121,10 +123,12 @@ ggplot(Ex1_Amp3,aes(x=mm_band,y=d18O,color=fct_recode(model,"Non-Linear" = "High
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
 ```
 
-## Non-linear growth with variable birth season ( Amplitude = 3)
+## Non-linear growth with variable birth season (Amplitude = 3)
+
+This plot shows 50 simulated dental isotope records generated using the non-linear growth rate and including the birth profile shown above.
 
 ```{r}
-Ex3<-read_csv("simZebraDataEX3.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
+Ex3<-read_csv("outputs/simZebraDataEX3.csv") %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
 uv<-unique(Ex3$specimen)
 samp<-sample(uv,50,replace=FALSE)
 Ex3_Amp3<-filter(Ex3,Amplitude==3,model=="High", specimen %in% samp)
@@ -139,9 +143,11 @@ ggplot(Ex3_Amp3,aes(x=mm_band,y=d18O,group=specimen,color=specimen)) +
 
 ## Non-linear growth with variable birth season and death age (Amplitude = 3)
 
+This plot shows 5 simulated dental isotope records generated using the non-linear growth rate and including the birth and mortality profiles shown above.
+
 ```{r}
 set.seed(303) #to keep the sampling of teeth consistent
-Ex4<-read_csv("simZebraDataEX4.csv") 
+Ex4<-read_csv("outputs/simZebraDataEX4.csv") 
 Ex4_pivot<-Ex4 %>% pivot_longer(cols=d18O_1:d18O_4,names_to="Amplitude",values_to="d18O",names_prefix="d18O_")
 uv<-unique(Ex4$specimen)
 #samp<-sample(uv,5,replace=FALSE) #for random sample
@@ -175,7 +181,7 @@ ggplot(Ex4_Amp3_samp, aes(x = mm_band, y = d18O, group = age_label, color = age_
   )
 ```
 
-Boxplots of intratooth variation
+Boxplots of intratooth variation for the same simulated teeth
 
 ```{r}
 ggplot(Ex4_Amp3_samp,aes(x=as_factor(specimen),y=d18O,group=as_factor(specimen),color=as_factor(specimen))) + 
@@ -190,7 +196,9 @@ ggplot(Ex4_Amp3_samp,aes(x=as_factor(specimen),y=d18O,group=as_factor(specimen),
 
 ```
 
-## Assessing amplitude
+## Assessing amplitude at different sampling regimes
+
+The following plots show how the assessment of seasonal isotope amplitude varies at different serial sampling intervals using two methods: max-min range and standard deviation.
 
 ```{r}
 set.seed(303)
@@ -282,6 +290,8 @@ ggplot(ampMethodCheckAll,aes(x=value)) +
 ```
 
 ## Bulk Sampling Comparison
+
+These plots compare two bulk sampling methodologies in terms of estimating amplitude range in dental isotopes: A) random sampling of single 1mm band perpendicular to the growth axis of the tooth, and B) sampling parallel to the growth axis of the tooth.
 
 ```{r}
 # Base filtered dataset
